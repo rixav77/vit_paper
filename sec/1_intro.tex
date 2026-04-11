@@ -1,0 +1,16 @@
+\section{Introduction}
+\label{sec:intro}
+
+%-------------------------------------------------------------------------
+
+Vision Transformers (ViTs)~\cite{dosovitskiy2021image} have emerged as a dominant architecture across computer vision, demonstrating strong performance in both recognition and dense prediction settings. However, ViTs suffer from quadratic computational complexity with respect to token count, making training at high resolutions prohibitively expensive. This limitation is particularly problematic for detection and segmentation, where fine-grained spatial detail is essential. Resolution extrapolation---training at low resolution and deploying at higher resolution---offers an appealing alternative, but is fundamentally constrained by the poor generalization of standard absolute positional embeddings beyond their training grid.
+
+Recent progress in Large Language Models~\cite{touvron2023llama} has shown that carefully designed positional encodings---including RoPE~\cite{su2024roformer}, ALiBi~\cite{press2022train}, FIRE~\cite{li2024functional}, and YaRN~\cite{peng2024yarn}---can effectively extend context lengths without retraining. These methods encode relative positional information through rotation-based mechanisms or attention biases, enabling strong extrapolation to longer sequences. However, their applicability to the two-dimensional spatial structure of vision data remains underexplored.
+
+In this work, we conduct a systematic empirical study of modern positional encoding strategies adapted to 2D Vision Transformers. Due to computational constraints, we focus on ViT-Tiny trained on ImageNet-100~\cite{deng2009imagenet} at $224 \times 224$, evaluating zero-shot extrapolation up to $1024 \times 1024$ without fine-tuning. Our contributions are:
+\begin{itemize}
+    \item We provide the first comprehensive comparison of RoPE~\cite{su2024roformer,heo2024rope}, ALiBi~\cite{press2022train}, YaRN~\cite{peng2024yarn}, and FIRE~\cite{li2024functional} for 2D resolution extrapolation in Vision Transformers, evaluating across classification, detection, and segmentation.
+    \item We demonstrate that attention bias-based methods (ALiBi, FIRE) substantially outperform rotation-based methods (RoPE, YaRN) under extrapolation, with FIRE retaining $63.1\%$ accuracy at $4.6\times$ resolution versus RoPE's $18.9\%$.
+    \item We analyze attention patterns to explain these differences, showing that bias-based methods maintain focused attention while rotation-based methods exhibit attention collapse at extrapolated resolutions.
+    \item We identify an anomalous failure mode of ALiBi at very low resolutions (e.g., $6 \times 6$ patch grids), providing practical deployment guidance.
+\end{itemize}

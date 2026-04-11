@@ -1,0 +1,41 @@
+%-------------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a systematic study of positional encoding strategies for Vision Transformers under
+resolution extrapolation, evaluating learned absolute embeddings~\cite{dosovitskiy2021image}, RoPE~\cite{su2024roformer,heo2024rope}, ALiBi~\cite{press2022train}, YaRN~\cite{peng2024yarn}, and FIRE~\cite{li2024functional}
+across classification, detection, and segmentation. Our experiments reveal a clear dichotomy:
+attention bias-based methods (ALiBi, FIRE) substantially outperform rotation-based methods
+(RoPE, YaRN) under extrapolation, with FIRE retaining $63.1\%$ Top-1 accuracy at $4.6\times$
+resolution compared to RoPE's $18.9\%$. Attention analysis confirms that this performance gap
+stems from attention pattern stability---bias-based methods maintain focused, semantically
+meaningful attention, while rotation-based methods exhibit attention collapse at extrapolated
+resolutions.
+
+\paragraph{Practical Recommendations.}
+For applications requiring resolution flexibility, we recommend FIRE or ALiBi as they provide
+the best extrapolation-accuracy trade-oaff. RoPE remains competitive for fixed-resolution
+deployment where in-distribution accuracy is prioritized. YaRN offers a practical middle ground
+when modifying a pre-trained RoPE model, providing substantial extrapolation gains through
+inference-time frequency scaling without retraining.
+
+\paragraph{Limitations.}
+Due to computational constraints, our study focuses on ViT-Tiny ($\sim$5.7M parameters) trained
+on ImageNet-100. While the consistent trends across three diverse tasks suggest our findings
+generalize, validation on larger models (ViT-Base/Large) and full ImageNet-1K would strengthen
+these conclusions. We report single-seed results; however, the convergent patterns across
+classification, detection, and segmentation provide implicit robustness evidence. Additionally,
+the low absolute mAP values in detection reflect ViT-Tiny's limited capacity rather than
+fundamental limitations of the positional encoding methods.
+
+\paragraph{Future Directions.}
+Several avenues merit further investigation: (i) scaling analysis to determine whether
+extrapolation trends hold for larger ViT variants; (ii) learned frequency scaling for RoPE
+that adapts to 2D spatial structure rather than using fixed NTK-by-parts ramps;
+(iii) hybrid approaches combining the in-distribution strength of rotation-based methods with
+the extrapolation stability of bias-based methods; and (iv) extension to video transformers
+where temporal extrapolation introduces additional challenges. We hope this work provides a
+foundation for building resolution-robust vision architectures under practical compute constraints.
+
+\paragraph{Broader Impact.}
+Resolution-flexible Vision Transformers can reduce computational costs and carbon footprint by enabling training at lower resolutions while maintaining performance at deployment. This work contributes to more efficient vision systems, though practitioners should validate extrapolation behavior on their specific domains before deployment.

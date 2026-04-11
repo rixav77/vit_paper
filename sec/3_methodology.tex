@@ -1,0 +1,148 @@
+\section{Methodology}
+\label{sec:methodology}
+
+This section describes each positional encoding strategy evaluated in our study. We begin with the baseline Vision Transformer using learned absolute positional embeddings, then present the rotation-based and bias-based relative positional methods adapted for 2D spatial inputs.
+
+%-------------------------------------------------------------------------
+\subsection{Simple ViT: Learned Absolute Positional Embeddings}
+
+The standard Vision Transformer (ViT)~\cite{dosovitskiy2021image,beyer2022better} processes an image $\mathbf{x} \in \mathbb{R}^{H \times W \times C}$ by partitioning it into a grid of non-overlapping patches of size $P \times P$, yielding $N = HW/P^2$ patch tokens. Each patch is linearly projected to a $d$-dimensional embedding via a convolutional stem, and a learnable classification token $\mathbf{x}_{\text{cls}} \in \mathbb{R}^d$ is prepended to the sequence. Positional information is injected by adding a set of learnable absolute positional embeddings $\mathbf{E}_{\text{pos}} \in \mathbb{R}^{N \times d}$ to the patch tokens:
+\begin{equation}
+\mathbf{z}_0 = [\mathbf{x}_{\text{cls}};\, \mathbf{x}_1 \mathbf{E};\, \mathbf{x}_2 \mathbf{E};\, \cdots;\, \mathbf{x}_N \mathbf{E}] + \mathbf{E}_{\text{pos}},
+\end{equation}
+where $\mathbf{E} \in \mathbb{R}^{P^2 C \times d}$ is the patch projection matrix. The resulting sequence is passed through $L$ transformer encoder blocks, each consisting of multi-head self-attention (MSA) and an MLP with layer normalization and residual connections:
+\begin{align}
+\mathbf{z}'_\ell &= \text{MSA}(\text{LN}(\mathbf{z}_{\ell-1})) + \mathbf{z}_{\ell-1}, \\
+\mathbf{z}_\ell &= \text{MLP}(\text{LN}(\mathbf{z}'_\ell)) + \mathbf{z}'_\ell.
+\end{align}
+The final representation of the classification token $\mathbf{z}_0^L$ is used for prediction.
+
+Since the learned positional embeddings are defined on a fixed $H/P \times W/P$ grid, they cannot directly generalize to spatial grids of different sizes. When evaluating at a resolution different from training, we apply 2D bicubic interpolation to the positional embeddings, reshaping them to the original grid, interpolating to the target grid size, and flattening back to a sequence. While this enables inference at novel resolutions, the interpolated embeddings are only an approximation and may degrade as the resolution gap increases.
+
+
+%-------------------------------------------------------------------------
+\subsection{RoPE: Rotary Position Embeddings for 2D Vision}
+
+Rotary Position Embedding (RoPE)~\cite{su2024roformer} encodes positional information by applying position-dependent complex rotations directly to the query and key vectors in self-attention, rather than adding an explicit positional embedding to the input tokens. For a token at 1D position $n$, RoPE defines a rotation matrix using frequency $\theta_t$ for the $t$-th dimension pair:
+\begin{equation}
+\mathbf{R}(n, t) = e^{i \theta_t n}, \quad \theta_t = \theta_{\text{base}}^{-t/(d_{\text{head}}/2)},
+\end{equation}
+where $d_{\text{head}}$ is the per-head dimension and $\theta_{\text{base}}$ controls the frequency range. The rotation is applied to query and key vectors via the Hadamard product:
+\begin{equation}
+\bar{\mathbf{q}}'_n = \bar{\mathbf{q}}_n \circ \mathbf{R}(n), \quad \bar{\mathbf{k}}'_m = \bar{\mathbf{k}}_m \circ \mathbf{R}(m),
+\end{equation}
+where $\bar{\mathbf{q}}, \bar{\mathbf{k}} \in \mathbb{C}^{d_{\text{head}}/2}$ are complex-valued views obtained by pairing consecutive dimensions. The resulting attention score between positions $n$ and $m$ naturally encodes their relative displacement:
+\begin{equation}
+A'_{(n,m)} = \text{Re}[\bar{\mathbf{q}}_n \bar{\mathbf{k}}_m^* \, e^{i\theta_t(n - m)}].
+\end{equation}
+
+To adapt RoPE to the 2D spatial structure of Vision Transformers, we follow the mixed learnable frequency formulation~\cite{heo2024rope}. Each patch has a 2D position $\mathbf{p}_n = (p_n^x, p_n^y)$ on the spatial grid. The rotation matrix is defined using separate frequency vectors for each axis:
+\begin{equation}
+\mathbf{R}(n, t) = e^{i(\theta_t^x \, p_n^x + \theta_t^y \, p_n^y)},
+\end{equation}
+where $(\theta_t^x, \theta_t^y)$ are per-head, per-layer learnable frequency parameters. Unlike axial RoPE, which restricts each frequency dimension to a single spatial axis, the mixed formulation allows each frequency to attend to both horizontal and vertical directions simultaneously. This enables RoPE to capture diagonal spatial relationships, which axial frequencies cannot represent. The resulting attention matrix encodes relative 2D displacements:
+\begin{equation}
+A'_{(n,m)} = \text{Re}\!\left[\bar{\mathbf{q}}_n \bar{\mathbf{k}}_m^* \, e^{i(\theta_t^x (p_n^x - p_m^x) + \theta_t^y (p_n^y - p_m^y))}\right].
+\end{equation}
+
+In our implementation, the mixed frequencies are initialized from a base frequency schedule with random per-head axis rotations and are trained jointly with the network parameters. Rotary embeddings are applied to all patch tokens but skipped for the classification token, which has no spatial position. For detection and segmentation backbones that omit the classification token, RoPE is applied to all tokens directly. Since RoPE does not introduce fixed-size positional parameters, it naturally handles variable-length sequences; however, at resolutions beyond the training range, the effective phase angles move outside the distribution seen during training, which can degrade attention stability.
+
+\subsection{FIRE: Functional Interpolation for Relative Positional Encoding}
+
+FIRE (Functional Interpolation for Relative Positional Encoding)~\cite{li2024functional} models relative positional information as a continuous, learnable attention bias designed for length extrapolation. Instead of relying on discrete lookup tables, FIRE parameterizes the attention bias between a query position $i$ and a key position $j$ using a small MLP:
+\begin{equation}
+b(i,j) = f_{\theta}\!\left( \frac{\psi(|i-j|)}{\psi(\max\{L,i\})} \right),
+\end{equation}
+where $f_{\theta}:\mathbb{R}\rightarrow\mathbb{R}^H$ outputs head-wise biases, $\psi(x)=\log(1+cx)$ is a monotonic concave transform with learnable scale $c$, and $L$ is a reference length controlling the onset of extrapolation. The normalization by $\max\{L,i\}$ implements \emph{progressive interpolation}, constraining the MLP input to $[0,1]$ for arbitrary sequence lengths and ensuring that longer contexts correspond to interpolation rather than out-of-distribution extrapolation in function space.
+
+To adapt FIRE to Vision Transformers, we apply the formulation on the flattened 2D patch sequence. For an image tokenized into an $H\times W$ grid with $N=HW$ patches, we index patches by their flattened order $i\in\{0,\ldots,N-1\}$ and compute pairwise relative distances $|i-j|$. The resulting bias matrix $\mathbf{B}\in\mathbb{R}^{H\times N\times N}$ is shared across layers and added directly to the scaled dot-product attention:
+\begin{equation}
+\text{Attn}(Q,K,V) = \text{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d}} + \mathbf{B}\right)V .
+\end{equation}
+
+Following the FIRE design, we incorporate (i) logarithmic distance warping to allocate higher resolution to local spatial relationships, (ii) thresholded normalization with a learnable multiplier on $L$ to preserve short-range behavior, and (iii) a learnable global bias scale to stabilize optimization when transferring from 1D sequences to dense 2D grids. For classification models, the bias is padded so that the class token receives zero positional offset, while for dense prediction backbones the formulation operates directly on patch tokens without a class token.
+
+This continuous, resolution-agnostic attention bias eliminates the need for positional embedding interpolation or frequency rescaling and naturally generalizes to larger patch grids. As a result, FIRE provides a principled mechanism for zero-shot spatial extrapolation in Vision Transformers, aligning closely with the functional interpolation theory of the original formulation while remaining fully compatible with standard ViT and downstream detection and segmentation backbones.
+
+
+
+\subsection{YaRN: Yet another RoPE extension for Resolution Extrapolation}
+
+YaRN (Yet another RoPE eNhancement)~\cite{peng2024yarn} is a frequency-aware extension of Rotary Position Embeddings designed to enable robust context-length extrapolation by selectively rescaling rotational frequencies and attention magnitudes. Unlike uniform interpolation of RoPE~\cite{chen2024extending}, YaRN preserves high-frequency components responsible for local ordering while only interpolating low-frequency dimensions that encode global structure.
+
+Recall that RoPE applies a complex rotation to query and key vectors:
+\begin{equation}
+\tilde{\mathbf{q}}_i = \mathbf{q}_i \odot e^{\mathrm{i}\theta(i)}, \qquad
+\tilde{\mathbf{k}}_j = \mathbf{k}_j \odot e^{\mathrm{i}\theta(j)},
+\end{equation}
+where $\theta_d(i) = i / \lambda_d$ and $\lambda_d$ denotes the wavelength of the $d$-th frequency. Position interpolation methods scale all dimensions uniformly, which compresses local relative angles and degrades short-range discrimination. YaRN instead performs \emph{targeted interpolation} by modifying the RoPE frequencies as
+\begin{equation}
+\theta_d' = (1-\gamma_d)\frac{\theta_d}{s} + \gamma_d \theta_d,
+\end{equation}
+where $s$ is the extrapolation factor and $\gamma_d \in [0,1]$ is a ramp function determined by the ratio between the original context length and the wavelength $\lambda_d$. Low-frequency dimensions (global structure) are interpolated, while high-frequency dimensions (local structure) are preserved.
+
+In addition, YaRN introduces attention temperature scaling by rescaling the rotary embeddings, effectively modifying the attention logits as
+\begin{equation}
+\text{Attn}(Q,K,V) = \text{softmax}\!\left(\frac{QK^\top}{t\sqrt{d}}\right)V,
+\end{equation}
+where $t$ is a scale-dependent temperature that stabilizes attention entropy under long-context extrapolation.
+
+For Vision Transformers, we adapt YaRN to the 2D spatial domain by applying RoPE independently along horizontal and vertical axes. Let $(x_i, y_i)$ denote the coordinates of the $i$-th patch. The complex rotation is computed using mixed 2D frequencies:
+\begin{equation}
+\theta(i) = \omega_x x_i + \omega_y y_i,
+\end{equation}
+with YaRN-scaled frequency matrices $\omega_x, \omega_y$ constructed per attention head and per layer. In our implementation, the modified frequencies are precomputed using the NTK-by-parts ramp and attention scaling, and the resulting complex exponentials are applied to queries and keys before attention computation.
+
+This 2D YaRN formulation yields resolution-agnostic rotary embeddings that preserve local spatial precision while enabling stable zero-shot extrapolation to significantly larger patch grids than those observed during training.
+
+
+
+\subsection{ALiBi: Attention with Linear Biases for Vision Transformers}
+
+ALiBi~\cite{press2022train} incorporates relative positional information into self-attention by adding a deterministic, head-specific linear bias directly to the attention logits. Unlike absolute positional embeddings, ALiBi does not encode positions explicitly, enabling robust extrapolation to longer sequences and higher resolutions without interpolation or additional learned positional parameters.
+
+For a sequence indexed by positions $i$ and $j$, the attention bias for head $h$ is defined as
+\[
+B^{(h)}_{ij} = - m_h \cdot d(i, j),
+\]
+where $m_h$ is a fixed slope assigned to each head and $d(i, j)$ denotes the relative distance between tokens. The slopes decrease monotonically across heads, allowing different heads to focus on different context ranges. Since these slopes are fixed, ALiBi introduces no trainable parameters for positional encoding.
+
+In vision transformers, tokens correspond to image patches arranged on a two-dimensional grid with spatial coordinates $(x_i, y_i)$. The relative distance between two patches is computed using the Euclidean metric
+\[
+d(i, j) = \sqrt{(x_i - x_j)^2 + (y_i - y_j)^2},
+\]
+preserving spatial inductive bias while remaining resolution-agnostic.
+
+The classification token, which lacks a spatial location, is assigned a constant distance to all patch tokens, resulting in a uniform CLS-to-patch bias while maintaining meaningful patch-to-patch relationships. The resulting bias tensor is shared across all transformer layers.
+
+During attention computation, the ALiBi bias is additively incorporated into the scaled dot-product attention,
+\[
+\text{Attn}(Q, K, V) =
+\text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}} + B\right)V,
+\]
+directly modulating attention scores based on relative distance. The model otherwise follows a standard Vision Transformer architecture, with patch embeddings generated by a convolutional stem and final predictions obtained from the encoded CLS token.
+
+\subsection{Summary of Positional Encoding Methods}
+
+Table~\ref{tab:method_comparison} summarizes the key properties of each positional encoding method. A fundamental distinction is between \emph{additive bias} methods (ALiBi, FIRE), which inject positional information directly into attention logits, and \emph{rotation-based} methods (RoPE, YaRN), which encode position through query-key rotations. Bias-based methods are inherently resolution-agnostic since they compute distances on-the-fly, while rotation-based methods require careful frequency design to avoid out-of-distribution phases at extrapolated resolutions.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of positional encoding methods. ``Pos.\ Params'' indicates learnable positional parameters; ``Res.\ Agnostic'' indicates whether the method handles arbitrary resolutions without interpolation.}
+\label{tab:method_comparison}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Type} & \textbf{Pos.\ Params} & \textbf{Res.\ Agnostic} \\
+\midrule
+Simple ViT & Absolute & $N \times d$ & No (interp.) \\
+RoPE & Rotation & Freq.\ vectors & Partial \\
+YaRN & Rotation & Same as RoPE & Yes (scaling) \\
+ALiBi & Add.\ bias & 0 & Yes \\
+FIRE & Add.\ bias & MLP ($\sim$1K) & Yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+

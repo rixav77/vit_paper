@@ -1,0 +1,62 @@
+\section{Related Works}
+\label{sec:related_work}
+
+%-------------------------------------------------------------------------
+\subsection{Positional Embeddings}
+
+Transformers~\cite{vaswani2017attention} are permutation-invariant and thus require explicit positional information to model token order or spatial layout. Early methods employ absolute positional embeddings, either fixed (e.g., sinusoidal) or learned, which are added to token features,
+\begin{equation}
+\mathbf{z}_i = \mathbf{x}_i + \mathbf{p}_i ,
+\end{equation}
+where $\mathbf{p}_i$ denotes the embedding of position $i$. Vision Transformers (ViTs)~\cite{dosovitskiy2021image} similarly use learned 2D absolute embeddings defined on a fixed spatial grid. However, such embeddings are resolution-specific and do not extrapolate beyond the training grid.
+
+Relative positional embeddings (RPEs) instead encode pairwise displacements by modifying attention scores as
+\begin{equation}
+\text{Attn}(i,j) = \frac{\mathbf{q}_i^\top \mathbf{k}_j}{\sqrt{d}} + b(\Delta_{ij}),
+\end{equation}
+where $\Delta_{ij}$ denotes the relative offset between tokens. In NLP, methods such as those of Shaw \emph{et al.}~\cite{shaw2018self} and T5~\cite{raffel2020exploring} improve generalization to longer sequences. In vision, relative position bias has been adopted in models such as Swin Transformer~\cite{liu2021swin}, but most approaches rely on bounded lookup tables and are limited to the range of distances seen during training.
+
+Recent large language models introduce extrapolatable positional schemes. Rotary Position Embeddings (RoPE)~\cite{su2024roformer} apply position-dependent rotations to queries and keys, encoding relative distances through phase differences. ALiBi~\cite{press2022train} injects a linear distance-dependent bias $b(\Delta)=\alpha\Delta$ into attention, enabling unbounded context lengths. YaRN~\cite{peng2024yarn} further rescales or interpolates rotary frequencies to stabilize long-range behavior, while FIRE~\cite{li2024functional} models relative distances using continuous Fourier features and smoothly decaying attention biases.
+
+Although these methods have shown strong 1D context extrapolation, their extension to 2D vision remains under-explored. Image-based Transformers must model relative offsets in both horizontal and vertical directions and generalize to spatial distances far exceeding those observed during training. In this work, we systematically compare learned absolute embeddings and modern relative or bias-based schemes—including RoPE, ALiBi, YaRN, and FIRE—within 2D Vision Transformers, focusing on their ability to support zero-shot resolution extrapolation.
+
+
+
+
+
+\subsection{Extrapolation in Large Language Models}
+
+
+
+
+Length extrapolation refers to the ability of a Transformer trained on sequences up to a fixed context length to generalize to much longer inputs at inference time. In early models with absolute positional embeddings, attention is computed as
+\begin{equation}
+e_{ij} = \frac{(q_i + p_i)^\top (k_j + p_j)}{\sqrt{d}},
+\end{equation}
+where $p_i$ denotes a learned or sinusoidal encoding for position $i$. Such representations are tied to the training grid and break when evaluated beyond the maximum context length.
+
+This limitation motivated the development of relative positional formulations, in which attention depends on token displacement $\Delta=i-j$:
+\begin{equation}
+e_{ij} = \frac{q_i^\top k_j}{\sqrt{d}} + b(\Delta),
+\end{equation}
+ensuring translation invariance and enabling generalization to unseen positions. Based on this principle, a series of extrapolatable schemes have been proposed, including RoPE~\cite{su2024roformer}, ALiBi~\cite{press2022train}, YaRN~\cite{peng2024yarn}, and FIRE~\cite{li2024functional}, each designed to control how attention varies with increasing distance. Position interpolation~\cite{chen2024extending} offers an alternative by rescaling positions into the training range. XPOS~\cite{sun2022length} introduces exponential decay to stabilize attention at long distances.
+
+Recent works identify several key properties for length extrapolation in LLMs~\cite{hong2024token,dong2024exploring}: (i) translation-invariant dependence on relative offsets, (ii) monotonic or smoothly decaying attention with distance, and (iii) suppression of high-frequency oscillations that destabilize long-range correlations. These principles are often analyzed through metrics such as \emph{attention resolution}, which measures how reliably attention scores reflect relative distance as sequence length grows. Further advances include training-free approaches such as InfLLM~\cite{xiao2024infllm}, divide-and-conquer scaling~\cite{yang2025dcis}, mixed-radix extensions~\cite{tian2026mrrope}, imaginary RoPE extensions~\cite{liu2025beyond}, multi-scale self-injection~\cite{han2026stacked}, and context window scheduling~\cite{zhu2025skyladder}.
+
+While such mechanisms have enabled dramatic context extension in 1D language modeling, existing analyses are almost exclusively confined to linear token sequences. How these extrapolation principles transfer to the 2D spatial lattice of Vision Transformers—where relative offsets become vectors $\Delta=(x_i-x_j, y_i-y_j)$ and distances grow radially rather than linearly—remains largely unexplored. This gap motivates our systematic study of positional embeddings under resolution extrapolation in the visual domain.
+
+
+\subsection{Positional Embeddings in Vision}
+
+Vision Transformers inherit the positional encoding mechanism from NLP but must adapt it to the inherently two-dimensional structure of images. Early ViT models~\cite{dosovitskiy2021image} employ learned absolute 2D positional embeddings defined on a fixed spatial grid and added to patch tokens as
+\begin{equation}
+\mathbf{z}_i = \mathbf{x}_i + \mathbf{p}_i ,
+\end{equation}
+where $\mathbf{p}_i \in \mathbb{R}^d$ encodes the spatial location of the $i$-th patch. While effective within the training resolution, such embeddings are resolution-specific and exhibit limited generalization when evaluated on larger spatial grids.
+
+To mitigate this, the original ViT and subsequent works~\cite{beyer2022better} interpolate positional embeddings when transferring to higher resolutions. Although interpolation enables fine-tuning at new input sizes, it does not provide true zero-shot extrapolation and remains dependent on the statistics of the training grid. Swin Transformer~\cite{liu2021swin} further introduces learnable 2D relative position biases within local windows, improving spatial modeling and scale transfer in hierarchical architectures. However, these biases are defined over bounded displacement ranges and thus cannot naturally generalize to unseen large spatial offsets.
+
+More recent studies on resolution flexibility, such as FlexiViT~\cite{beyer2023flexivit} and conditional positional encodings~\cite{chu2023conditional}, explore resizing and rescaling strategies for both patch and positional embeddings, allowing a single ViT to operate across multiple resolutions and patch sizes. Despite their practical success, these approaches still rely on learned absolute embeddings or bounded relative tables, offering limited theoretical support for long-range spatial extrapolation.
+
+In contrast, modern positional schemes developed for large language models—such as RoPE~\cite{su2024roformer}, ALiBi~\cite{press2022train}, YaRN~\cite{peng2024yarn}, and FIRE~\cite{li2024functional}---encode relative distances through rotations or attention biases and have demonstrated strong context-length extrapolation in 1D. While some of these methods have been adapted to vision~\cite{heo2024rope}, a systematic study of their behavior in the 2D spatial domain, particularly under zero-shot resolution extrapolation, remains lacking. Our work fills this gap by evaluating these modern relative and continuous positional embeddings within Vision Transformers and analyzing their ability to generalize to spatial resolutions far beyond the training grid.
+
