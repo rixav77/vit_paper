@@ -1,0 +1,43 @@
+\documentclass[10pt]{article}
+\usepackage{tmlr}
+
+\input{math_commands.tex}
+
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{placeins}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{url}
+
+\graphicspath{{../}}
+
+\title{Analysing Extrapolation Capabilities of Modern Positional Embeddings in Vision Transformers}
+
+% Authors must not appear in the submitted version. They should be hidden
+\author{\name First Author \email firstauthor@institution.edu \\
+      \addr Department of Computer Science\\
+      Institution 1}
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\begin{document}
+
+\maketitle
+
+\input{sec/0_abstract}
+\input{sec/1_intro}
+\input{sec/2_related_work}
+\input{sec/3_methodology}
+\input{sec/4_experiments}
+\input{sec/5_result&analysis}
+\input{sec/6_conclusion}
+
+\FloatBarrier
+\bibliography{../main}
+\bibliographystyle{tmlr}
+
+\end{document}
